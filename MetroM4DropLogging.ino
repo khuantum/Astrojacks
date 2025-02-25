@@ -1,37 +1,19 @@
-// Adafruit SPI Flash FatFs Simple Datalogging Example
-// Author: Tony DiCola
-//
-// This is a simple dataloging example using the SPI Flash
-// FatFs library.  The example will open a file on the SPI
-// flash and append new lines of data every minute. Note that
-// you MUST have a flash chip that's formatted with a flash
-// filesystem before running.  See the fatfs_format example
-// to perform this formatting.
-//
-// Usage:
-// - Modify the pins and type of fatfs object in the config
-//   section below if necessary (usually not necessary).
-// - Upload this sketch to your M0 express board.
-// - Open the serial monitor at 115200 baud.  You should see the
-//   example print a message every minute when it writes a new
-//   value to the data logging file.
-//Above is Usage Instructions
-
-
 //NOTICE: You need to format the storage for a brand new m4 that hasn't been setup. Run the format example in the Adafruit SPIFlash Library
-
+//Below is Usage Instructions
+// - Upload this sketch to your Metro M4 board.
+// - Open the serial monitor at 115200 baud. 
+// - Open Serial Plotter to see real time plot of drop acceleration values
+// - Change restingAccel Global Variable depending on your accelerometers
+//   resting acceleration output
 
 #include <SPI.h>
 #include <SdFat.h>
 
-
 #include <Adafruit_SPIFlash.h>
-
 
 // for flashTransport definition
 #include "flash_config.h"
 Adafruit_SPIFlash flash(&flashTransport);
-
 
 //for Adafruit Accel/Gyro
 #include <Adafruit_MPU6050.h>
@@ -39,23 +21,26 @@ Adafruit_SPIFlash flash(&flashTransport);
 #include <Wire.h>
 Adafruit_MPU6050 mpu;
 
+#include <vector>
 
 // file system object from SdFat
 FatVolume fatfs;
-
 
 // Configuration for the datalogging file:
 //#define FILE_NAME "drop_data.csv"
 int fileNum = 1;
 
-
+//global variables
 float dropAccelThresh = 30.0;
 float freeFallThresh = 2.0;
-float restingAccel = 9.0;
+float restingAccel = 8.9;
 float peakAccel = 0.0;
 unsigned long impactDuration = 0;
+std::vector<float> accelBuffer;
+std::vector<unsigned long> timeBuffer;
 
-
+// float accelBuffer[200];
+// unsigned long timeBuffer[200];
 
 void setup() {
   // Initialize serial port and wait for it to open before continuing.
@@ -174,7 +159,7 @@ void setup() {
 }
 
 
-void logSensorData(float totalAccel, unsigned long timeStamp) {
+void logSensorData() {
   Serial.println("Collecting and Storing Accelerometer/Gyro Data...");
 
   // Generate a unique file name
@@ -186,33 +171,26 @@ void logSensorData(float totalAccel, unsigned long timeStamp) {
   File32 dataFile = fatfs.open(FILE_NAME, FILE_WRITE);
   // Check that the file opened successfully and write a line to it.
   if (dataFile) {
-    // // Take a new data reading from a Accel
-    // /* Get new sensor events with the readings */
-    // sensors_event_t a, g, temp;
-    // mpu.getEvent(&a, &g, &temp);
-
-    // float xAcel = a.acceleration.x;
-    // float yAcel = a.acceleration.y;
-    // float zAcel = a.acceleration.z;
-
-
-    // float totalAccel = sqrt((xAcel * xAcel) + (yAcel * yAcel) + (zAcel * zAcel));
-
-
-    // // Get timestamp
-    // unsigned long timestamp = millis();
-
 
     // Write header if file is empty
     if (dataFile.size() == 0) {
-      dataFile.println("Timestamp (ms),Total Accel (m/s^2)");
+      dataFile.println("Timestamp (ms),Total Accel (m/s^2),Peak Acceleration from drop (m/s^2),Impact Duration(ms)");
     }
 
-
     // Write CSV data
-    dataFile.print(timeStamp);
+    for (int i = 0; i < accelBuffer.size() - 1; i++) {
+      dataFile.print(timeBuffer[i]);
+      dataFile.print(",");
+      dataFile.print(accelBuffer[i]);
+      dataFile.println();
+    }
+    dataFile.print(timeBuffer[accelBuffer.size() - 1]);
     dataFile.print(",");
-    dataFile.print(totalAccel);
+    dataFile.print(accelBuffer[accelBuffer.size() - 1]);
+    dataFile.print(",");
+    dataFile.print(peakAccel);
+    dataFile.print(",");
+    dataFile.print(impactDuration);
     dataFile.println();
 
     // Close the file
@@ -222,12 +200,23 @@ void logSensorData(float totalAccel, unsigned long timeStamp) {
     Serial.println("Failed to open data file for writing!");
   }
 
-
   Serial.println("---------------------------------");
+
+  //erase the buffers/std vectors
+  std::vector<float>().swap(accelBuffer);
+  std::vector<unsigned long>().swap(timeBuffer);
+
+  //reset peakAccel and impact duration variables for next drop
+  peakAccel = 0.0;
+  impactDuration = 0;
+
+  //move to next storage slot
+  fileNum++;
 }
 
 
 void readMetroData() {
+  Serial.println("--------------------------");
   Serial.println("Enter the file number you want to read (e.g., 1 for drop_data_1.csv):");
 
   while (!Serial.available()) {
@@ -235,9 +224,6 @@ void readMetroData() {
   }
 
   int fileChoice = Serial.parseInt();
-  while (Serial.available()) {
-    Serial.read();  // Clear buffer
-  }
 
   char fileName[20];
   sprintf(fileName, "drop_data_%d.csv", fileChoice);  // e.g., drop_data_2.csv
@@ -273,27 +259,29 @@ void readMetroData() {
 void drop() {  //add while free fall has not been reached loop
   //while has not reached free fall yet
   bool freeFall = false;
+  float totalAccel1 = 0.0;
   while (!freeFall) {
-    float totalAccel1;
     totalAccel1 = getAccelValue();
     Serial.println(totalAccel1);
     freeFall = totalAccel1 < freeFallThresh;
   }
 
 
-  float totalAccel;
+  float totalAccel = 0.0;
   bool steadyState = false;
   int impact = 0;
 
   unsigned long impactStart = 0;
   unsigned long impactEnd = 0;
   unsigned long timeStamp = 0;
+  int logNum = 0;
 
   while (!steadyState) {
     //once reach free fall log until reach equilibrium, to reach equilibrium must wait for spike
     totalAccel = getAccelValue();
     timeStamp = millis();
-    logSensorData(totalAccel, timeStamp);
+    accelBuffer.push_back(totalAccel);
+    timeBuffer.push_back(timeStamp);
     Serial.println(totalAccel);
 
     float temp1 = 0.0;
@@ -307,13 +295,13 @@ void drop() {  //add while free fall has not been reached loop
       }
     }
 
-    if ((impact > 0) && (totalAccel < 8.9)) {
+    if ((impact > 0) && (totalAccel < restingAccel)) {
       impactEnd = millis();
       impactDuration = impactEnd - impactStart;  //return impact duration
       steadyState = true;
     }
   }
-  fileNum++;
+  logSensorData();
 }
 
 
@@ -336,23 +324,11 @@ float getAccelValue() {
 
 void loop() {
 
-
-  unsigned long startTime = millis();
-
-  // Wait for Serial to be available for up to 5 seconds
-  while (!Serial && millis() - startTime < 5000) {
-    delay(100);
-  }
-
-
   if (Serial) {
     Serial.println("Board Detected");
   } else {
     Serial.println("Running standalone mode (No Serial)");
   }
-
-
-  //Serial.setTimeout(20000);
 
 
   Serial.println();
@@ -367,9 +343,13 @@ void loop() {
   }
 
 
-  char action = Serial.read();
+  char action;
+  
+  do {
+    action = Serial.read();
+  } while (action == '\n' || action == '\r');  // Skip newline characters
 
-  // Clear buffer
+  // Clear buffer just in case
   while (Serial.available()) {
     Serial.read();
   }
