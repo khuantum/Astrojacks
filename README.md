@@ -19,3 +19,7 @@ This code will ask for the file name and create a plot labeled "sample_plot.png.
 ## Viewing  
 The file cannot be viewed on raspberry pi. To view the plot, enter the following command on the raspi:  `scp jacker{#}@jacker{#}.local:/home/jacker{#}/{enter_path_of_file/filename.png}`
 
+## Version History  
+2/24/25
+* added files, updated readme with instructions
+
