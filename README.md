@@ -5,7 +5,7 @@ Chris's Branch:
 Last Updated 2/25
 
 latest update:
-updated file to test metro using battery and store accel values on board in CSV format. Will be used to create test CSV drop files for different surfaces and utlizied in ML training. 
+Added new file with a third option to simulate a drop. AKA drop, log, store, and send CSV to PI for ML Processing.
 
 Previous Update:
-added arduino file to test metro using battery and store accel values on board. Will be useful for testing with new case prototype.
+updated file to test metro using battery and store accel values on board in CSV format. Will be used to create test CSV drop files for different surfaces and utlizied in ML training.
