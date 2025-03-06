@@ -8,7 +8,7 @@ This code utilizes the following pin connections:
 ### send_command.py & receive.command.py
 These files were used to test simple data reception and transmission in the SDR's transparent mode. This does not require any direct addressing. A sender SDR would run a send script while a receive SDR would run the receive script.
 
-## api_chat_test.py
+### api_chat_test.py
 Attempts to utilize API frames - does not curently work.  
 
 
