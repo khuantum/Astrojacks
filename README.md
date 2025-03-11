@@ -2,10 +2,10 @@
 A repo for UW's NASA JPL capstone team.
 
 Chris's Branch:
-Last Updated 2/25
+Last Updated 3/11
 
 latest update:
-Added new file with a third option to simulate a drop. AKA drop, log, store, and send CSV to PI for ML Processing.
+Added files for USB to serial converter code for Metro and code to add another set of UART pins on Metro
 
 Previous Update:
-updated file to test metro using battery and store accel values on board in CSV format. Will be used to create test CSV drop files for different surfaces and utlizied in ML training.
+Added new file with a third option to simulate a drop. AKA drop, log, store, and send CSV to PI for ML Processing.
