@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+import smbus2, time
+import csv
+import matplotlib.pyplot as plt
+
+I2C_BUS     = 1
+SLAVE_ADDR  = 0x08
+BUF_SZ      = 32
+OUT_FILE    = "received_final_10_hard.csv"
+
+def find_header_start(buf, marker=b"Timestamp"):
+    idx = buf.find(marker)
+    return idx if idx >= 0 else None
+
+def receive_csv():
+    bus = smbus2.SMBus(I2C_BUS)
+    first_block = True
+
+    with open(OUT_FILE, "wb") as f:
+        while True:
+        raw = bytes(bus.read_i2c_block_data(SLAVE_ADDR, 0, BUF_SZ))
+
+            # 1) EOF?
+            if b"EOF" in raw:
+                print("EOF received; done.")
+                break
+
+            # 2) strip trailing bus-idle padding
+            raw = raw.rstrip(b'\xff')
+
+            if not raw:
+                # nothing but padding — skip
+                continue
+
+            if first_block:
+                # drop everything until ‘Timestamp’
+                start = find_header_start(raw)
+                if start is None:
+                    # header hasn't arrived yet
+                    continue
+                raw = raw[start:]
+                first_block = False
+
+            # write out the remaining clean bytes
+            f.write(raw)
+            # small pause so we don't hammer the bus
+            time.sleep(0.01)
+
+    print(f"Written clean CSV to {OUT_FILE}")
+
+def plot_acceleration():
+    """ Reads the CSV file, plots acceleration vs. time, and prints the surface type. """
+    timestamps = []
+    acceleration = []
+    surface_type = None  # To store the surface type from the last row
+
+    try:
+        with open(OUT_FILE, mode="r") as file:
+            reader = csv.reader(file)
+            header = next(reader, None)  # Skip header row
+
+            for row in reader:
+                if len(row) < 2:
+                    continue  # Skip incomplete rows
+                
+                try:
+                    timestamps.append(float(row[0]))  # Time (ms)
+                    acceleration.append(float(row[1]))  # Acceleration (m/sÂ²)
+                except ValueError:
+                    continue  # Skip bad rows
+
+                # Capture the last row's surface type (column index 4)
+                if len(row) >= 5:  # Ensure column exists
+                    surface_type = row[4]  # Get last surface type entry
+
+        if not timestamps or not acceleration:
+            print("Error: No valid data found in CSV.")
+            return
+
+        # Print the surface type (if found)
+        if surface_type:
+            print(f"Surface Type: {surface_type}")
+
+        # Plot acceleration vs time
+        plt.figure(figsize=(10, 5))
+        plt.plot(timestamps, acceleration, label="Acceleration", color="blue", linestyle="-")
+
+        plt.xlabel("Time (ms)")
+        plt.ylabel("Acceleration (m/sÂ²)")
+        plt.title(f"Acceleration vs. Time ({surface_type})")  # Show surface type in title
+        plt.legend()
+        plt.grid(True)
+
+        # Save and display the plot
+        plt.savefig("acceleration_plot.png")
+        plt.show()
+
+    except Exception as e:
+        print(f"Error reading or plotting CSV: {e}")
+
+if __name__ == "__main__":
+    receive_csv()
+    plot_acceleration()
