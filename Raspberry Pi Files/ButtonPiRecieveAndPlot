@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+import smbus2
+import time
+import csv
+import matplotlib.pyplot as plt
+import RPi.GPIO as GPIO
+
+# Ã‚â€”Ã‚â€”Ã‚â€” CONFIGURATION Ã‚â€”Ã‚â€”Ã‚â€”
+I2C_BUS     = 1
+SLAVE_ADDR  = 0x08
+BUF_SZ      = 32
+OUT_FILE    = "received_button_test.csv"
+READY_PIN   = 13     # BCM pin where Metro drives its READY signal
+
+# Ã‚â€”Ã‚â€”Ã‚â€” CSV RECEIVE Ã‚â€”Ã‚â€”Ã‚â€”
+def find_header_start(buf, marker=b"Timestamp"):
+    return buf.find(marker)
+
+def receive_csv():
+    bus = smbus2.SMBus(I2C_BUS)
+    first_block = True
+
+    with open(OUT_FILE, "wb") as f:
+        while True:
+            raw = bytes(bus.read_i2c_block_data(SLAVE_ADDR, 0, BUF_SZ))
+
+            # 1) EOF?
+            if b"EOF" in raw:
+                print("EOF received; done.")
+                break
+
+            # 2) strip trailing bus-idle padding
+            raw = raw.rstrip(b'\xff')
+            if not raw:
+                # nothing but padding Ã‚â€” skip
+                continue
+
+            if first_block:
+                # drop everything until Ã‚â€˜TimestampÃ‚â€™
+                idx = find_header_start(raw)
+                if idx < 0:
+                    # header hasn't arrived yet
+                    continue
+                raw = raw[idx:]
+                first_block = False
+
+            # write out the remaining clean bytes
+            f.write(raw)
+            time.sleep(0.01)
+
+    print(f"Written clean CSV to {OUT_FILE}")
+
+# Ã‚â€”Ã‚â€”Ã‚â€” PLOTTING Ã‚â€”Ã‚â€”Ã‚â€”
+def plot_acceleration():
+    timestamps = []
+    acceleration = []
+    surface_type = None
+
+    try:
+        with open(OUT_FILE, "r") as csvfile:
+            reader = csv.reader(csvfile)
+            header = next(reader, None)
+
+            for row in reader:
+                if len(row) < 2:
+                    continue
+                try:
+                    timestamps.append(float(row[0]))
+                    acceleration.append(float(row[1]))
+                except ValueError:
+                    continue
+
+                # last column is surface type
+                if len(row) >= 5:
+                    surface_type = row[4]
+
+        if not timestamps:
+            print("No data found in CSV.")
+            return
+
+        if surface_type:
+            print(f"Surface Type: {surface_type}")
+
+        plt.figure(figsize=(10,5))
+        plt.plot(timestamps, acceleration, label="Accel")
+        plt.xlabel("Time (ms)")
+        plt.ylabel("Acceleration (m/sÃ‚Â²)")
+        plt.title(f"Acceleration vs Time ({surface_type})")
+        plt.grid(True)
+        plt.legend()
+        plt.savefig("acceleration_plot.png")
+        plt.show()
+
+    except Exception as e:
+        print("Error reading/plotting CSV:", e)
+
+# Ã‚â€”Ã‚â€”Ã‚â€” MAIN LOGIC Ã‚â€”Ã‚â€”Ã‚â€”
+def main():
+    # Setup GPIO to watch READY_PIN
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(READY_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+    print(f"Waiting for Metro READY signal on GPIO{READY_PIN}...")
+    try:
+        # Poll until the pin goes HIGH
+        while not GPIO.input(READY_PIN):
+            time.sleep(0.01)
+        print(">>> READY signal detected! Starting I2C transfer...")
+        receive_csv()
+        plot_acceleration()
+    finally:
+        GPIO.cleanup()
+
+if __name__ == "__main__":
+    main()
+
